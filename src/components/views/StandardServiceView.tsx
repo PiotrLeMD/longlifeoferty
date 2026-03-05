@@ -150,10 +150,13 @@ export default function StandardServiceView({ serviceName }: StandardServiceView
   useEffect(() => {
     if (totalPacjenci === 0) {
       setFinalPrice(0);
-    } else if (finalPrice === 0) {
-      setFinalPrice(Math.round(totalKoszt * 1.8 * 100) / 100);
+    } else if (
+      finalPrice === 0 ||
+      finalPrice < preferredPrice * 0.2
+    ) {
+      setFinalPrice(Math.round(preferredPrice * 100) / 100);
     }
-  }, [totalPacjenci, totalKoszt]);
+  }, [totalPacjenci, preferredPrice]);
 
   return (
     <div className="space-y-6">

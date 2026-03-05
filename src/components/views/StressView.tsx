@@ -163,12 +163,15 @@ export default function StressView() {
   }, [locations, isZKrwi, sumaKosztowLab, sumaCenLab]);
 
   useEffect(() => {
-    if (totalPacjenci > 0 && finalPrice === 0) {
-      setFinalPrice(Math.round(preferredPrice * 100) / 100);
-    } else if (totalPacjenci === 0) {
+    if (totalPacjenci === 0) {
       setFinalPrice(0);
+    } else if (
+      !isLoading &&
+      (finalPrice === 0 || finalPrice < preferredPrice * 0.2)
+    ) {
+      setFinalPrice(Math.round(preferredPrice * 100) / 100);
     }
-  }, [totalPacjenci, preferredPrice]);
+  }, [totalPacjenci, preferredPrice, isLoading]);
 
   const rentownosc = useMemo(
     () => straznikRentownosci(razemKoszt, 0, finalPrice),

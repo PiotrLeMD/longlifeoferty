@@ -267,10 +267,14 @@ export default function YearlyProgramView() {
   useEffect(() => {
     if (totalPatients === 0) {
       setFinalYearlyPrice(0);
-    } else {
+    } else if (
+      !isLoading &&
+      (finalYearlyPrice === 0 ||
+        finalYearlyPrice < suggestedPrice * 0.2)
+    ) {
       setFinalYearlyPrice(Math.round(suggestedPrice * 100) / 100);
     }
-  }, [totalPatients, suggestedPrice]);
+  }, [totalPatients, suggestedPrice, isLoading, finalYearlyPrice]);
 
   const miesiecznaInwestycja =
     totalPatients > 0 ? finalYearlyPrice / totalPatients / 12 : 0;
