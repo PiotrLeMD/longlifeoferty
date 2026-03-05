@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
+import { PDFDownloadButton } from "@/src/components/PDFDownloadButton";
 
 function getOpisMarketingowy(nazwa: string): string {
   if (nazwa.includes("Badania Lab")) return OPISY_MARKETINGOWE["Badania Laboratoryjne"];
@@ -380,13 +381,42 @@ export default function SummaryView() {
           <span className="text-xs text-slate-500">{today}</span>
         </div>
         </CardHeader>
-        <CardContent>
-        <Button
-          onClick={generateMarkdown}
-          disabled={!cart.length}
-        >
-          Generuj Prezentację (Markdown)
-        </Button>
+        <CardContent className="space-y-4">
+        <div className="flex flex-wrap gap-3">
+          <Button
+            onClick={generateMarkdown}
+            disabled={!cart.length}
+          >
+            Generuj Prezentację (Markdown)
+          </Button>
+          <PDFDownloadButton
+            offerData={{
+              client: {
+                firma: klientFirma,
+                adres: klientAdres,
+                kontakt: klientKontakt,
+                email: klientEmail,
+              },
+              handlowiec: {
+                imie: handlowiecImie,
+                stanowisko: handlowiecStanowisko,
+                email: handlowiecEmail,
+                telefon: handlowiecTelefon,
+              },
+              items: cart.map((item) => ({
+                usluga: item.usluga,
+                cenaBrutto: item.cenaBrutto,
+                cenaPerCapita: item.cenaPerCapita,
+                ilosc: 1,
+                opis: item.logistyka,
+              })),
+              totalBrutto: cart.reduce((s, i) => s + i.cenaBrutto, 0),
+              dataWystawienia: today,
+            }}
+            fileName={`oferta-${(klientFirma || "klient").replace(/\s+/g, "-").slice(0, 30)}-${today.replace(/\./g, "-")}.pdf`}
+            disabled={!cart.length}
+          />
+        </div>
 
         {generatedMarkdown && (
           <div className="mt-6 space-y-3">

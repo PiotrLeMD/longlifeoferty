@@ -141,7 +141,7 @@ export default function StressView() {
       }
 
       pacjenci += patients;
-      opis += `- ${nazwaLok}: ${patients} os.\n`;
+      opis += `- ${nazwaLok}: ${patients} os. (${teams} zesp.)\n`;
     }
 
     const kosztStres = pacjenci * 100;
