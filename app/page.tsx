@@ -12,6 +12,7 @@ import {
   LogOut,
   Trash2,
   Stethoscope,
+  FileText,
 } from "lucide-react";
 import { useStore } from "@/src/store/useStore";
 import { DANE_HANDLOWCOW } from "@/src/lib/constants";
@@ -43,12 +44,14 @@ type ViewId =
   | "kardiologia"
   | "spirometria"
   | "usg"
-  | "dermatoskopia";
+  | "dermatoskopia"
+  | "contract-client";
 
 interface MenuItem {
   id: ViewId;
   label: string;
   icon: React.ReactNode;
+  /** Jeśli ustawione, renderowany jest StandardServiceView dla tej usługi */
   serviceName?: string;
 }
 
@@ -66,6 +69,11 @@ const MENU_ITEMS: MenuItem[] = [
   { id: "spirometria", label: "Spirometria", icon: <Stethoscope className="size-4" />, serviceName: "Spirometria" },
   { id: "usg", label: "USG w Firmie", icon: <Stethoscope className="size-4" />, serviceName: "USG w Firmie" },
   { id: "dermatoskopia", label: "Dermatoskopia", icon: <Stethoscope className="size-4" />, serviceName: "Dermatoskopia" },
+  {
+    id: "contract-client",
+    label: "Wygeneruj umowę dla klienta",
+    icon: <FileText className="size-4" />,
+  },
 ];
 
 function LoginScreen({
@@ -199,10 +207,21 @@ function Sidebar({
   );
 }
 
+function ContractClientPlaceholder() {
+  return (
+    <div className="flex min-h-[42vh] flex-col items-center justify-center text-center">
+      <p className="text-2xl font-medium tracking-tight text-slate-700">
+        W budowie 🚧
+      </p>
+    </div>
+  );
+}
+
 function MainContent({ viewId }: { viewId: ViewId }) {
   const item = MENU_ITEMS.find((m) => m.id === viewId);
   const serviceName = item?.serviceName;
 
+  if (viewId === "contract-client") return <ContractClientPlaceholder />;
   if (viewId === "summary") return <SummaryView />;
   if (viewId === "calendar") return <CalendarView />;
   if (viewId === "budget") return <BudgetView />;

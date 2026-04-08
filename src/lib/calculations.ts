@@ -13,6 +13,16 @@ export interface WynikStraznikaRentownosci {
  * Sprawdza rentowność oferty na podstawie kosztu operacyjnego, przychodu sztywnego (lab) i ceny końcowej.
  * Zwraca status, komunikat i procent marży.
  */
+/** Cena po globalnym rabacie procentowym (cena końcowa = cena przed rabatem). */
+export function cenaPoRabacieProcentowym(
+  cenaKoncowa: number,
+  rabatProcent: number
+): number {
+  const r = Math.max(0, Math.min(100, rabatProcent));
+  if (r <= 0 || cenaKoncowa <= 0) return cenaKoncowa;
+  return cenaKoncowa - cenaKoncowa * (r / 100);
+}
+
 export function straznikRentownosci(
   kosztOperacyjny: number,
   przychodSztywnyLab: number,

@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { Plus, Trash2, CalendarDays } from "lucide-react";
 import { WEBINARY_TEMATY } from "@/src/lib/constants";
 import { dynamicznyKalkulatorProgramu } from "@/src/lib/calculations";
 import { useStore } from "@/src/store/useStore";
 import { supabase } from "@/src/lib/supabase";
 import { normalizePackageFields } from "@/src/lib/normalizePackage";
+import { LabItemInfo } from "@/src/components/lab/LabItemInfo";
 import type { Harmonogram } from "@/src/store/useStore";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -54,6 +55,11 @@ const DEFAULT_LOCATION: Omit<Location, "id"> = {
   patients: 0,
   km: 0,
 };
+
+function getStableKey(pkg: any): string {
+  const { nazwa } = normalizePackageFields(pkg);
+  return String(pkg?.id ?? nazwa ?? "unknown");
+}
 
 function zbudujNazweAkcji(
   bazowaAkcja: string,
@@ -110,6 +116,22 @@ export default function YearlyProgramView() {
     q4: WEBINARY_TEMATY[3] ?? "",
   });
   const [customLabPackages, setCustomLabPackages] = useState<string[]>([]);
+  const [dolaczOpisDoOferty, setDolaczOpisDoOferty] = useState<
+    Record<string, boolean>
+  >({});
+
+  const setIncludeOffer = useCallback((key: string, value: boolean) => {
+    setDolaczOpisDoOferty((prev) => ({ ...prev, [key]: value }));
+  }, []);
+
+  /** Gotowe pakiety lab — spójnie z LabView (tylko rodzaj pakiet). */
+  const pakietyDoSiatki = useMemo(
+    () =>
+      packagesDb.filter(
+        (p) => normalizePackageFields(p).rodzaj === "pakiet"
+      ),
+    [packagesDb]
+  );
 
   const totalPatients = useMemo(
     () => locations.reduce((s, l) => s + l.patients, 0),
@@ -138,14 +160,15 @@ export default function YearlyProgramView() {
       setIsLoading(true);
       try {
         const { data } = await supabase.from("badania").select("*");
-        console.log("Otrzymane dane z bazy:", data);
         if (!cancelled && data) {
           setPackagesDb(data);
-          setQ4LabPackage((prev) =>
-            prev === "" && data.length > 0
-              ? (normalizePackageFields(data[0]).nazwa || "Pakiet 1")
-              : prev
+          const pakiety = data.filter(
+            (p) => normalizePackageFields(p).rodzaj === "pakiet"
           );
+          setQ4LabPackage((prev) => {
+            if (prev !== "" || pakiety.length === 0) return prev;
+            return normalizePackageFields(pakiety[0]).nazwa || "Pakiet 1";
+          });
         }
       } catch {
         if (!cancelled) setPackagesDb([]);
@@ -264,17 +287,100 @@ export default function YearlyProgramView() {
     lokalizacjeForKalk,
   ]);
 
+  /** Baza kosztowa (ops + mat. + lab + stałe) – do przeliczenia marży po rabacie w koszyku */
+  const kosztBazowyProgramu = useMemo(() => {
+    if (totalPatients <= 0 || lokalizacjeForKalk.length === 0) return 0;
+
+    if (activeTab === "szablony") {
+      if (profile === "Biuro / IT") {
+        const akcje = [
+          "Cukrzyca PREMIUM",
+          "Dermatoskopia",
+          "Zarządzanie stresem (Bez krwi)",
+          "Profilaktyka Serca",
+        ];
+        const [ops, matStd, kLab] = dynamicznyKalkulatorProgramu(
+          akcje,
+          lokalizacjeForKalk,
+          0,
+          0
+        );
+        return ops + matStd + kLab + 9500 + (dietitian ? dietitianDays * 4000 : 0);
+      }
+      const akcje = [
+        "Cukrzyca BASIC",
+        "Spirometria",
+        "Profilaktyka Serca",
+        "Badania Lab",
+      ];
+      const pkg = packagesDb.find((p: any) => {
+        const { nazwa } = normalizePackageFields(p);
+        return nazwa === q4LabPackage;
+      });
+      const { koszt: labKoszt, cena: labCena } = pkg
+        ? normalizePackageFields(pkg)
+        : { koszt: 0, cena: 0 };
+      const [ops, matStd, kLab] = dynamicznyKalkulatorProgramu(
+        akcje,
+        lokalizacjeForKalk,
+        labKoszt,
+        labCena
+      );
+      return ops + matStd + kLab + 9500 + (dietitian ? dietitianDays * 4000 : 0);
+    }
+
+    const akcje = [
+      customActions.q1,
+      customActions.q2,
+      customActions.q3,
+      customActions.q4,
+    ];
+    let labKoszt = 0,
+      labCena = 0;
+    if (customLabPackages.length > 0) {
+      const selected = packagesDb.filter((p: any, idx: number) => {
+        const { nazwa } = normalizePackageFields(p);
+        const displayNazwa = nazwa || `Pakiet ${idx + 1}`;
+        return customLabPackages.includes(displayNazwa);
+      });
+      labKoszt = selected.reduce((s, p) => s + normalizePackageFields(p).koszt, 0);
+      labCena = selected.reduce((s, p) => s + normalizePackageFields(p).cena, 0);
+    }
+    const [ops, matStd, kLab] = dynamicznyKalkulatorProgramu(
+      akcje,
+      lokalizacjeForKalk,
+      labKoszt,
+      labCena
+    );
+    return (
+      ops +
+      matStd +
+      kLab +
+      9500 +
+      (customDietitian ? customDietitianDays * 4000 : 0)
+    );
+  }, [
+    activeTab,
+    profile,
+    dietitian,
+    dietitianDays,
+    packagesDb,
+    q4LabPackage,
+    customActions,
+    customDietitian,
+    customDietitianDays,
+    customLabPackages,
+    totalPatients,
+    lokalizacjeForKalk,
+  ]);
+
   useEffect(() => {
     if (totalPatients === 0) {
       setFinalYearlyPrice(0);
-    } else if (
-      !isLoading &&
-      (finalYearlyPrice === 0 ||
-        finalYearlyPrice < suggestedPrice * 0.2)
-    ) {
+    } else if (!isLoading) {
       setFinalYearlyPrice(Math.round(suggestedPrice * 100) / 100);
     }
-  }, [totalPatients, suggestedPrice, isLoading, finalYearlyPrice]);
+  }, [totalPatients, suggestedPrice, isLoading]);
 
   const miesiecznaInwestycja =
     totalPatients > 0 ? finalYearlyPrice / totalPatients / 12 : 0;
@@ -342,6 +448,8 @@ export default function YearlyProgramView() {
       logistyka: log,
       abonament: true,
       harmonogram: harmonogramDict,
+      kosztOperacyjny: kosztBazowyProgramu,
+      przychodSztywnyLab: 0,
     });
     toast.success(`Dodano Roczny Program: ${profile} do zestawienia!`);
   };
@@ -381,6 +489,8 @@ export default function YearlyProgramView() {
       logistyka: log,
       abonament: true,
       harmonogram: harmonogramDict,
+      kosztOperacyjny: kosztBazowyProgramu,
+      przychodSztywnyLab: 0,
     });
     toast.success("Dodano Indywidualny Program Zdrowotny do zestawienia!");
   };
@@ -596,28 +706,6 @@ export default function YearlyProgramView() {
                   <p className="force-wrap mb-2 font-medium text-slate-800">
                     Q4 – {profile === "Biuro / IT" ? "Profilaktyka Serca" : "Badania Lab"}
                   </p>
-                  {profile === "Zakład Produkcyjny / Praca fizyczna" && (
-                    <Select
-                      value={q4LabPackage}
-                      onValueChange={setQ4LabPackage}
-                      disabled={isLoading || packagesDb.length === 0}
-                    >
-                      <SelectTrigger className="mb-2 h-9 w-full min-w-0 max-w-full overflow-hidden [&_[data-slot=select-value]]:min-w-0 [&_[data-slot=select-value]]:truncate [&_[data-slot=select-value]]:justify-start">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {packagesDb.map((pkg: any, idx: number) => {
-                          const { nazwa } = normalizePackageFields(pkg);
-                          const displayNazwa = nazwa || `Pakiet ${idx + 1}`;
-                          return (
-                            <SelectItem key={pkg.id ?? idx} value={displayNazwa}>
-                              {displayNazwa}
-                            </SelectItem>
-                          );
-                        })}
-                      </SelectContent>
-                    </Select>
-                  )}
                   <Select value={webinars.q4} onValueChange={(v) => setWebinars((w) => ({ ...w, q4: v }))}>
                     <SelectTrigger className="h-9 w-full min-w-0 max-w-full overflow-hidden [&_[data-slot=select-value]]:min-w-0 [&_[data-slot=select-value]]:truncate [&_[data-slot=select-value]]:justify-start">
                       <SelectValue />
@@ -630,6 +718,78 @@ export default function YearlyProgramView() {
                   </Select>
                 </div>
               </div>
+
+              {profile === "Zakład Produkcyjny / Praca fizyczna" && (
+                <div className="mt-6">
+                  <p className="mb-2 text-sm font-medium text-slate-700">
+                    Q4 – Badania Lab: wybierz gotowy pakiet
+                  </p>
+                  {isLoading ? (
+                    <p className="rounded-lg bg-slate-100 px-4 py-3 text-sm text-slate-600">
+                      Ładowanie pakietów...
+                    </p>
+                  ) : pakietyDoSiatki.length === 0 ? (
+                    <p className="text-sm text-amber-800">
+                      Brak pozycji z rodzajem „pakiet” w bazie — ustaw kolumnę{" "}
+                      <code className="rounded bg-amber-100 px-1">rodzaj</code>{" "}
+                      dla pakietów laboratoryjnych.
+                    </p>
+                  ) : (
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                      {pakietyDoSiatki.map((pkg: any, idx: number) => {
+                        const norm = normalizePackageFields(pkg);
+                        const { nazwa, cena, koszt, skladniki, description } =
+                          norm;
+                        const displayNazwa = nazwa || `Pakiet ${idx + 1}`;
+                        const isSelected = q4LabPackage === displayNazwa;
+                        const sKey = getStableKey(pkg);
+                        return (
+                          <div
+                            key={pkg.id ?? sKey}
+                            className={`flex min-h-0 min-w-0 gap-2 rounded-xl border-2 p-3 transition-all duration-200 ${
+                              isSelected
+                                ? "border-green-500 bg-green-50 ring-2 ring-green-500"
+                                : "border-slate-200 bg-white"
+                            }`}
+                          >
+                            <Button
+                              type="button"
+                              variant={isSelected ? "default" : "outline"}
+                              onClick={() =>
+                                setQ4LabPackage((prev) =>
+                                  prev === displayNazwa ? "" : displayNazwa
+                                )
+                              }
+                              className="!flex !h-auto !whitespace-normal min-h-0 min-w-0 flex-1 shrink flex-col items-start justify-start gap-2 break-words px-3 py-3 text-left text-sm leading-snug"
+                            >
+                              <span className="w-full min-w-0 font-semibold leading-snug text-balance">
+                                {displayNazwa}
+                              </span>
+                              <span className="w-full text-xs text-slate-600">
+                                Koszt: {koszt} PLN / os.
+                              </span>
+                              <span className="w-full text-sm font-bold leading-snug">
+                                Nasza cena: {cena} PLN / os.
+                              </span>
+                            </Button>
+                            <div className="shrink-0 self-start pt-1">
+                              <LabItemInfo
+                                title={displayNazwa}
+                                skladniki={skladniki}
+                                description={description}
+                                includeInOffer={!!dolaczOpisDoOferty[sKey]}
+                                onIncludeChange={(v) =>
+                                  setIncludeOffer(sKey, v)
+                                }
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
         </TabsContent>
 
@@ -722,34 +882,68 @@ export default function YearlyProgramView() {
                 ))}
               </div>
               {needsLabPackages && (
-                <div className="mt-4">
-                  <p className="mb-2 text-sm font-medium text-slate-600">
-                    Wybrałeś akcję wymagającą laboratorium. Zaznacz pakiety:
+                <div className="mt-6">
+                  <p className="mb-2 text-sm font-medium text-slate-700">
+                    Wybrałeś akcję wymagającą laboratorium — wybierz gotowe
+                    pakiety (jak w module Lab):
                   </p>
                   {isLoading ? (
-                    <p className="text-sm text-slate-600">Ładowanie pakietów...</p>
-                  ) : packagesDb.length === 0 ? (
-                    <p className="text-sm text-amber-700">
-                      Brak pakietów w bazie.
+                    <p className="rounded-lg bg-slate-100 px-4 py-3 text-sm text-slate-600">
+                      Ładowanie pakietów...
+                    </p>
+                  ) : pakietyDoSiatki.length === 0 ? (
+                    <p className="text-sm text-amber-800">
+                      Brak pozycji z rodzajem „pakiet” w bazie.
                     </p>
                   ) : (
-                    <div className="flex flex-wrap gap-2">
-                      {packagesDb.map((pkg: any, idx: number) => {
-                        const { nazwa } = normalizePackageFields(pkg);
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                      {pakietyDoSiatki.map((pkg: any, idx: number) => {
+                        const norm = normalizePackageFields(pkg);
+                        const { nazwa, cena, koszt, skladniki, description } =
+                          norm;
                         const displayNazwa = nazwa || `Pakiet ${idx + 1}`;
+                        const isSelected =
+                          customLabPackages.includes(displayNazwa);
+                        const sKey = getStableKey(pkg);
                         return (
-                          <label
-                            key={pkg.id ?? idx}
-                            className="flex cursor-pointer items-start gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm hover:bg-slate-50"
+                          <div
+                            key={pkg.id ?? sKey}
+                            className={`flex min-h-0 min-w-0 gap-2 rounded-xl border-2 p-3 transition-all duration-200 ${
+                              isSelected
+                                ? "border-green-500 bg-green-50 ring-2 ring-green-500"
+                                : "border-slate-200 bg-white"
+                            }`}
                           >
-                            <input
-                              type="checkbox"
-                              checked={customLabPackages.includes(displayNazwa)}
-                              onChange={() => toggleCustomLabPackage(displayNazwa)}
-                              className="mt-0.5 shrink-0 rounded border-slate-300 text-blue-600"
-                            />
-                            <span className="force-wrap">{displayNazwa}</span>
-                          </label>
+                            <Button
+                              type="button"
+                              variant={isSelected ? "default" : "outline"}
+                              onClick={() =>
+                                toggleCustomLabPackage(displayNazwa)
+                              }
+                              className="!flex !h-auto !whitespace-normal min-h-0 min-w-0 flex-1 shrink flex-col items-start justify-start gap-2 break-words px-3 py-3 text-left text-sm leading-snug"
+                            >
+                              <span className="w-full min-w-0 font-semibold leading-snug text-balance">
+                                {displayNazwa}
+                              </span>
+                              <span className="w-full text-xs text-slate-600">
+                                Koszt: {koszt} PLN / os.
+                              </span>
+                              <span className="w-full text-sm font-bold leading-snug">
+                                Nasza cena: {cena} PLN / os.
+                              </span>
+                            </Button>
+                            <div className="shrink-0 self-start pt-1">
+                              <LabItemInfo
+                                title={displayNazwa}
+                                skladniki={skladniki}
+                                description={description}
+                                includeInOffer={!!dolaczOpisDoOferty[sKey]}
+                                onIncludeChange={(v) =>
+                                  setIncludeOffer(sKey, v)
+                                }
+                              />
+                            </div>
+                          </div>
                         );
                       })}
                     </div>
@@ -767,13 +961,13 @@ export default function YearlyProgramView() {
             <div className="rounded-xl border border-blue-200 bg-blue-50/50 p-6 shadow-sm transition-all duration-200">
               <div className="space-y-4">
                 <div>
-                  <Label>Sugerowana Cena Roczna</Label>
+                  <Label>Cena preferowana (roczna)</Label>
                   <p className="text-xl font-semibold text-slate-800">
                     {suggestedPrice.toFixed(2)} PLN
                   </p>
                 </div>
                 <div className="space-y-2 max-w-xs">
-                  <Label>Ostateczna cena roczna za program (PLN)</Label>
+                  <Label>Cena końcowa (roczna za program, PLN)</Label>
                   <Input
                     type="number"
                     min={0}

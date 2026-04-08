@@ -165,10 +165,7 @@ export default function StressView() {
   useEffect(() => {
     if (totalPacjenci === 0) {
       setFinalPrice(0);
-    } else if (
-      !isLoading &&
-      (finalPrice === 0 || finalPrice < preferredPrice * 0.2)
-    ) {
+    } else if (!isLoading) {
       setFinalPrice(Math.round(preferredPrice * 100) / 100);
     }
   }, [totalPacjenci, preferredPrice, isLoading]);
@@ -198,6 +195,8 @@ export default function StressView() {
       logistyka: logistykaFull,
       abonament: false,
       harmonogram: null,
+      kosztOperacyjny: razemKoszt,
+      przychodSztywnyLab: 0,
     });
     toast.success("Dodano Zarządzanie stresem do zestawienia!");
   };
@@ -431,7 +430,9 @@ export default function StressView() {
               </p>
             </div>
             <div className="rounded-xl border border-slate-200 bg-green-50/50 p-4">
-              <p className="text-sm font-medium text-slate-600">3. Pref</p>
+              <p className="text-sm font-medium text-slate-600">
+                3. Cena preferowana
+              </p>
               <p className="text-xl font-semibold text-slate-800">
                 {preferredPrice.toFixed(2)} PLN
               </p>

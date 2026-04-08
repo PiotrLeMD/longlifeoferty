@@ -34,6 +34,14 @@ export const USLUGI_INDYWIDUALNE: string[] = [
   "Dietetyk",
 ];
 
+/** Rodzaje badań do wyboru w module USG (wielokrotny wybór; cena bez zmian) */
+export const USG_RODZAJE_BADAN = [
+  "Jama brzuszna",
+  "Tarczyca",
+  "Piersi",
+  "Jądra",
+] as const;
+
 export const EMAIL_KOORDYNATORA = "katarzyna.czarnowska@longlife.pl,aleksandra.leszczynska@longlife.pl";
 
 // --- OPISY MARKETINGOWE ---

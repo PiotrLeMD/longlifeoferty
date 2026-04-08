@@ -2,7 +2,12 @@
 
 import { useState, useMemo, useEffect } from "react";
 import { Plus, Trash2 } from "lucide-react";
-import { PARAMETRY_USLUG, KOSZT_NOCLEGU, STAWKA_KM } from "@/src/lib/constants";
+import {
+  PARAMETRY_USLUG,
+  KOSZT_NOCLEGU,
+  STAWKA_KM,
+  USG_RODZAJE_BADAN,
+} from "@/src/lib/constants";
 import {
   straznikRentownosci,
   generujLogistykeOpis,
@@ -63,6 +68,17 @@ export default function StandardServiceView({ serviceName }: StandardServiceView
     { ...DEFAULT_LOCATION, id: 0 },
   ]);
   const [finalPrice, setFinalPrice] = useState(0);
+  const [usgRodzaje, setUsgRodzaje] = useState<string[]>([]);
+
+  const isUsg = serviceName === "USG w Firmie";
+
+  const toggleUsgRodzaj = (rodzaj: string) => {
+    setUsgRodzaje((prev) =>
+      prev.includes(rodzaj)
+        ? prev.filter((r) => r !== rodzaj)
+        : [...prev, rodzaj]
+    );
+  };
 
   const addLocation = () => {
     const newId = idCounter;
@@ -134,15 +150,25 @@ export default function StandardServiceView({ serviceName }: StandardServiceView
   const logistyka = generujLogistykeOpis(totalPacjenci, opisLok);
 
   const handleAddToCart = () => {
+    const logistykaZUsg =
+      isUsg && usgRodzaje.length > 0
+        ? `${logistyka}\n\n**Zakres badań USG:** ${usgRodzaje.join(", ")}`
+        : logistyka;
+
     addToCart({
       usluga: serviceName,
       cenaBrutto: finalPrice,
       cenaPerCapita,
       cenaRynkowaOsoba: 0,
       marzaProcent: `${rentownosc.marza.toFixed(1)}%`,
-      logistyka,
+      logistyka: logistykaZUsg,
       abonament: false,
       harmonogram: null,
+      kosztOperacyjny: totalKoszt,
+      przychodSztywnyLab: 0,
+      ...(isUsg && usgRodzaje.length > 0
+        ? { usgRodzajeBadan: [...usgRodzaje] }
+        : {}),
     });
     toast.success(`Dodano ${serviceName} do zestawienia!`);
   };
@@ -150,10 +176,7 @@ export default function StandardServiceView({ serviceName }: StandardServiceView
   useEffect(() => {
     if (totalPacjenci === 0) {
       setFinalPrice(0);
-    } else if (
-      finalPrice === 0 ||
-      finalPrice < preferredPrice * 0.2
-    ) {
+    } else {
       setFinalPrice(Math.round(preferredPrice * 100) / 100);
     }
   }, [totalPacjenci, preferredPrice]);
@@ -266,6 +289,42 @@ export default function StandardServiceView({ serviceName }: StandardServiceView
         Dodaj lokalizację
       </Button>
 
+      {isUsg && (
+        <Card className="border-violet-200/80 bg-violet-50/40 shadow-sm transition-all duration-200">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Rodzaj badań USG</CardTitle>
+            <p className="text-sm font-normal text-slate-600">
+              Wybierz jedną lub więcej opcji (bez wpływu na cenę).
+            </p>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-wrap gap-2">
+              {USG_RODZAJE_BADAN.map((rodzaj) => {
+                const checked = usgRodzaje.includes(rodzaj);
+                return (
+                  <label
+                    key={rodzaj}
+                    className={`flex cursor-pointer items-center gap-2 rounded-full border px-3 py-1.5 text-sm transition-colors ${
+                      checked
+                        ? "border-violet-500 bg-violet-100 text-violet-900"
+                        : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggleUsgRodzaj(rodzaj)}
+                      className="size-4 shrink-0 rounded border-slate-300 text-violet-600 focus:ring-violet-500"
+                    />
+                    {rodzaj}
+                  </label>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {totalPacjenci > 0 && (
         <>
           <hr className="border-slate-200" />
@@ -293,7 +352,7 @@ export default function StandardServiceView({ serviceName }: StandardServiceView
             </div>
             <div className="rounded-xl border border-slate-200 bg-green-50/50 p-4">
               <p className="text-sm font-medium text-slate-600">
-                3. Pref (×2.0)
+                3. Cena preferowana (×2.0)
               </p>
               <p className="text-xl font-semibold text-slate-800">
                 {(totalKoszt * 2.0).toFixed(2)} PLN

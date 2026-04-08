@@ -96,6 +96,8 @@ export default function WebinarsView() {
       logistyka,
       abonament: false,
       harmonogram: null,
+      kosztOperacyjny: 0,
+      przychodSztywnyLab: 0,
     });
     toast.success(`Dodano ${tytulKoszyk} do zestawienia!`);
   };
@@ -209,7 +211,7 @@ export default function WebinarsView() {
           </div>
           <div className="rounded-xl border border-slate-200 bg-amber-50/50 p-4">
             <p className="text-sm font-medium text-slate-600">
-              Sugerowana Cena
+              Cena preferowana
             </p>
             <p className="text-xl font-semibold text-slate-800">
               {suggestedPrice.toFixed(2)} PLN
@@ -217,7 +219,7 @@ export default function WebinarsView() {
           </div>
           <div className="rounded-xl border border-slate-200 bg-green-50/50 p-4">
             <p className="text-sm font-medium text-slate-600">
-              Twoja Cena Końcowa
+              Cena końcowa
             </p>
             <p className="text-xl font-semibold text-slate-800">
               {totalCena.toFixed(2)} PLN

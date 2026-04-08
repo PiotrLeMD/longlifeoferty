@@ -1,3 +1,5 @@
+export type RodzajPozycjiBadania = "pakiet" | "badanie";
+
 /**
  * Bezpieczne mapowanie pól z bazy Supabase (różna wielkość liter: snake_case, CamelCase, PascalCase).
  */
@@ -15,5 +17,34 @@ export function normalizePackageFields(pkg: any) {
   const cenaRynkowa = Number(
     pkg?.cena_rynkowa ?? pkg?.Cena_rynkowa ?? pkg?.cenaRynkowa ?? pkg?.cena ?? 0
   );
-  return { nazwa, cena, koszt, skladniki, cenaRynkowa };
+  const description =
+    (pkg?.description ||
+      pkg?.Description ||
+      pkg?.opis ||
+      pkg?.Opis ||
+      pkg?.opis_kliniczny ||
+      pkg?.uwagi ||
+      "") as string;
+
+  const rodzajRaw = (
+    pkg?.rodzaj ||
+    pkg?.Rodzaj ||
+    pkg?.typ ||
+    pkg?.Typ ||
+    ""
+  )
+    .toString()
+    .toLowerCase();
+  let rodzaj: RodzajPozycjiBadania = "pakiet";
+  if (
+    rodzajRaw === "badanie" ||
+    rodzajRaw === "badania" ||
+    rodzajRaw === "pojedyncze" ||
+    rodzajRaw === "single" ||
+    rodzajRaw === "badanie_pojedyncze"
+  ) {
+    rodzaj = "badanie";
+  }
+
+  return { nazwa, cena, koszt, skladniki, cenaRynkowa, description, rodzaj };
 }

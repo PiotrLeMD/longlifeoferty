@@ -15,6 +15,10 @@ export interface OfferDataClient {
   adres: string;
   kontakt: string;
   email: string;
+  /** NIP klienta (opcjonalnie, z generatora) */
+  nip?: string;
+  /** URL logo klienta – do wykorzystania w przyszłych szablonach */
+  logoKlientaUrl?: string;
 }
 
 export interface OfferDataHandlowiec {
@@ -266,6 +270,9 @@ export function OfferPDF({ offerData }: { offerData: OfferData }) {
             )}
             {client.email && (
               <Text style={styles.clientLine}>Email: {client.email}</Text>
+            )}
+            {client.nip && (
+              <Text style={styles.clientLine}>NIP: {client.nip}</Text>
             )}
           </View>
           <View style={styles.dataSection}>
