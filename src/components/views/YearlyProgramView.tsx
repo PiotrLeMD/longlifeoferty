@@ -6,9 +6,12 @@ import { WEBINARY_TEMATY } from "@/src/lib/constants";
 import { dynamicznyKalkulatorProgramu } from "@/src/lib/calculations";
 import { useStore } from "@/src/store/useStore";
 import { supabase } from "@/src/lib/supabase";
-import { normalizePackageFields } from "@/src/lib/normalizePackage";
-import { LabItemInfo } from "@/src/components/lab/LabItemInfo";
-import type { Harmonogram } from "@/src/store/useStore";
+import type { Harmonogram, LabCartDetal } from "@/src/store/useStore";
+import { LabConfiguratorPanel } from "@/src/components/lab/LabConfiguratorPanel";
+import {
+  EMPTY_LAB_SNAPSHOT,
+  type LabConfiguratorSnapshot,
+} from "@/src/components/lab/useLabPackageSelection";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,6 +25,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { cn } from "@/lib/utils";
 
 interface Location {
   id: number;
@@ -56,9 +60,16 @@ const DEFAULT_LOCATION: Omit<Location, "id"> = {
   km: 0,
 };
 
-function getStableKey(pkg: any): string {
-  const { nazwa } = normalizePackageFields(pkg);
-  return String(pkg?.id ?? nazwa ?? "unknown");
+function labWybraneNazwy(detal: LabCartDetal | null): string[] | null {
+  if (!detal) return null;
+  const u = [...detal.nazwyPakietowBazowych, ...detal.nazwyDodatkowychBadan];
+  return u.length ? u : null;
+}
+
+function akcjaWymagaLabWWpisie(akcja: string): boolean {
+  return (
+    akcja === "Badania Lab" || akcja === "Zarządzanie stresem (Z krwią)"
+  );
 }
 
 function zbudujNazweAkcji(
@@ -97,8 +108,6 @@ export default function YearlyProgramView() {
     q3: WEBINARY_TEMATY[2] ?? "",
     q4: WEBINARY_TEMATY[1] ?? "",
   });
-  const [q4LabPackage, setQ4LabPackage] = useState("");
-
   // Custom
   const [priority, setPriority] = useState(PRIORYTETY[0]);
   const [customDietitian, setCustomDietitian] = useState(false);
@@ -115,23 +124,18 @@ export default function YearlyProgramView() {
     q3: WEBINARY_TEMATY[2] ?? "",
     q4: WEBINARY_TEMATY[3] ?? "",
   });
-  const [customLabPackages, setCustomLabPackages] = useState<string[]>([]);
-  const [dolaczOpisDoOferty, setDolaczOpisDoOferty] = useState<
-    Record<string, boolean>
-  >({});
-
-  const setIncludeOffer = useCallback((key: string, value: boolean) => {
-    setDolaczOpisDoOferty((prev) => ({ ...prev, [key]: value }));
-  }, []);
-
-  /** Gotowe pakiety lab — spójnie z LabView (tylko rodzaj pakiet). */
-  const pakietyDoSiatki = useMemo(
-    () =>
-      packagesDb.filter(
-        (p) => normalizePackageFields(p).rodzaj === "pakiet"
-      ),
-    [packagesDb]
+  const [labSzablon, setLabSzablon] = useState<LabConfiguratorSnapshot>(
+    EMPTY_LAB_SNAPSHOT
   );
+  const [labCustom, setLabCustom] = useState<LabConfiguratorSnapshot>(
+    EMPTY_LAB_SNAPSHOT
+  );
+  const onLabSzablon = useCallback((s: LabConfiguratorSnapshot) => {
+    setLabSzablon(s);
+  }, []);
+  const onLabCustom = useCallback((s: LabConfiguratorSnapshot) => {
+    setLabCustom(s);
+  }, []);
 
   const totalPatients = useMemo(
     () => locations.reduce((s, l) => s + l.patients, 0),
@@ -160,16 +164,7 @@ export default function YearlyProgramView() {
       setIsLoading(true);
       try {
         const { data } = await supabase.from("badania").select("*");
-        if (!cancelled && data) {
-          setPackagesDb(data);
-          const pakiety = data.filter(
-            (p) => normalizePackageFields(p).rodzaj === "pakiet"
-          );
-          setQ4LabPackage((prev) => {
-            if (prev !== "" || pakiety.length === 0) return prev;
-            return normalizePackageFields(pakiety[0]).nazwa || "Pakiet 1";
-          });
-        }
+        if (!cancelled && data) setPackagesDb(data);
       } catch {
         if (!cancelled) setPackagesDb([]);
       } finally {
@@ -201,6 +196,17 @@ export default function YearlyProgramView() {
     );
   };
 
+  const needsLabPackages =
+    activeTab === "custom" &&
+    (customActions.q1 === "Badania Lab" ||
+      customActions.q2 === "Badania Lab" ||
+      customActions.q3 === "Badania Lab" ||
+      customActions.q4 === "Badania Lab" ||
+      customActions.q1 === "Zarządzanie stresem (Z krwią)" ||
+      customActions.q2 === "Zarządzanie stresem (Z krwią)" ||
+      customActions.q3 === "Zarządzanie stresem (Z krwią)" ||
+      customActions.q4 === "Zarządzanie stresem (Z krwią)");
+
   const suggestedPrice = useMemo(() => {
     if (totalPatients <= 0 || lokalizacjeForKalk.length === 0) return 0;
 
@@ -226,13 +232,8 @@ export default function YearlyProgramView() {
           "Profilaktyka Serca",
           "Badania Lab",
         ];
-        const pkg = packagesDb.find((p: any) => {
-          const { nazwa } = normalizePackageFields(p);
-          return nazwa === q4LabPackage;
-        });
-        const { koszt: labKoszt, cena: labCena } = pkg
-          ? normalizePackageFields(pkg)
-          : { koszt: 0, cena: 0 };
+        const labKoszt = labSzablon.sumaKosztow;
+        const labCena = labSzablon.sumaCen;
         const [ops, matStd, , pLab] = dynamicznyKalkulatorProgramu(
           akcje,
           lokalizacjeForKalk,
@@ -248,17 +249,8 @@ export default function YearlyProgramView() {
         customActions.q3,
         customActions.q4,
       ];
-      let labKoszt = 0,
-        labCena = 0;
-      if (customLabPackages.length > 0) {
-        const selected = packagesDb.filter((p: any, idx: number) => {
-          const { nazwa } = normalizePackageFields(p);
-          const displayNazwa = nazwa || `Pakiet ${idx + 1}`;
-          return customLabPackages.includes(displayNazwa);
-        });
-        labKoszt = selected.reduce((s, p) => s + normalizePackageFields(p).koszt, 0);
-        labCena = selected.reduce((s, p) => s + normalizePackageFields(p).cena, 0);
-      }
+      const labKoszt = needsLabPackages ? labCustom.sumaKosztow : 0;
+      const labCena = needsLabPackages ? labCustom.sumaCen : 0;
       const [ops, matStd, , pLab] = dynamicznyKalkulatorProgramu(
         akcje,
         lokalizacjeForKalk,
@@ -277,12 +269,14 @@ export default function YearlyProgramView() {
     profile,
     dietitian,
     dietitianDays,
-    packagesDb,
-    q4LabPackage,
+    labSzablon.sumaKosztow,
+    labSzablon.sumaCen,
+    labCustom.sumaKosztow,
+    labCustom.sumaCen,
+    needsLabPackages,
     customActions,
     customDietitian,
     customDietitianDays,
-    customLabPackages,
     totalPatients,
     lokalizacjeForKalk,
   ]);
@@ -313,13 +307,8 @@ export default function YearlyProgramView() {
         "Profilaktyka Serca",
         "Badania Lab",
       ];
-      const pkg = packagesDb.find((p: any) => {
-        const { nazwa } = normalizePackageFields(p);
-        return nazwa === q4LabPackage;
-      });
-      const { koszt: labKoszt, cena: labCena } = pkg
-        ? normalizePackageFields(pkg)
-        : { koszt: 0, cena: 0 };
+      const labKoszt = labSzablon.sumaKosztow;
+      const labCena = labSzablon.sumaCen;
       const [ops, matStd, kLab] = dynamicznyKalkulatorProgramu(
         akcje,
         lokalizacjeForKalk,
@@ -335,17 +324,8 @@ export default function YearlyProgramView() {
       customActions.q3,
       customActions.q4,
     ];
-    let labKoszt = 0,
-      labCena = 0;
-    if (customLabPackages.length > 0) {
-      const selected = packagesDb.filter((p: any, idx: number) => {
-        const { nazwa } = normalizePackageFields(p);
-        const displayNazwa = nazwa || `Pakiet ${idx + 1}`;
-        return customLabPackages.includes(displayNazwa);
-      });
-      labKoszt = selected.reduce((s, p) => s + normalizePackageFields(p).koszt, 0);
-      labCena = selected.reduce((s, p) => s + normalizePackageFields(p).cena, 0);
-    }
+    const labKoszt = needsLabPackages ? labCustom.sumaKosztow : 0;
+    const labCena = needsLabPackages ? labCustom.sumaCen : 0;
     const [ops, matStd, kLab] = dynamicznyKalkulatorProgramu(
       akcje,
       lokalizacjeForKalk,
@@ -364,12 +344,14 @@ export default function YearlyProgramView() {
     profile,
     dietitian,
     dietitianDays,
-    packagesDb,
-    q4LabPackage,
+    labSzablon.sumaKosztow,
+    labSzablon.sumaCen,
+    labCustom.sumaKosztow,
+    labCustom.sumaCen,
+    needsLabPackages,
     customActions,
     customDietitian,
     customDietitianDays,
-    customLabPackages,
     totalPatients,
     lokalizacjeForKalk,
   ]);
@@ -387,22 +369,14 @@ export default function YearlyProgramView() {
 
   const cenaPerCapita = totalPatients > 0 ? finalYearlyPrice / totalPatients : 0;
 
-  const needsLabPackages =
-    activeTab === "custom" &&
-    (customActions.q1 === "Badania Lab" ||
-      customActions.q2 === "Badania Lab" ||
-      customActions.q3 === "Badania Lab" ||
-      customActions.q4 === "Badania Lab" ||
-      customActions.q1 === "Zarządzanie stresem (Z krwią)" ||
-      customActions.q2 === "Zarządzanie stresem (Z krwią)" ||
-      customActions.q3 === "Zarządzanie stresem (Z krwią)" ||
-      customActions.q4 === "Zarządzanie stresem (Z krwią)");
-
-  const toggleCustomLabPackage = (nazwa: string) => {
-    setCustomLabPackages((prev) =>
-      prev.includes(nazwa) ? prev.filter((p) => p !== nazwa) : [...prev, nazwa]
-    );
-  };
+  const szablonWymagaLabu =
+    profile === "Zakład Produkcyjny / Praca fizyczna";
+  const szablonLabOk =
+    !szablonWymagaLabu || labSzablon.konfiguracjaPoprawna;
+  const customLabOk =
+    !needsLabPackages || labCustom.konfiguracjaPoprawna;
+  const podsumowanieOk =
+    activeTab === "szablony" ? szablonLabOk : customLabOk;
 
   const handleAddSzablony = () => {
     const harmonogramDict: Harmonogram = {
@@ -429,7 +403,10 @@ export default function YearlyProgramView() {
         akcja:
           profile === "Biuro / IT"
             ? "Profilaktyka Serca"
-            : zbudujNazweAkcji("Badania Lab", q4LabPackage),
+            : zbudujNazweAkcji(
+                "Badania Lab",
+                labWybraneNazwy(labSzablon.labCartDetal)
+              ),
         webinar: webinars.q4,
       },
       dietetyk: dietitian,
@@ -438,18 +415,29 @@ export default function YearlyProgramView() {
 
     let log = `Profil: ${profile}\nObjętych programem: ${totalPatients} os.\nLokalizacje:\n${opisLokProg}`;
     if (dietitian) log += `\nDodatkowo: ${dietitianDays} dni konsultacji dietetycznych.`;
+    if (
+      szablonWymagaLabu &&
+      labSzablon.szczegolyPakietow.trim()
+    ) {
+      log += `\n**Skład wybranego laboratorium:**\n${labSzablon.szczegolyPakietow}\n`;
+    }
+
+    const detalSzablon = szablonWymagaLabu
+      ? labSzablon.labCartDetal
+      : null;
 
     addToCart({
       usluga: `Roczny Program: ${profile}`,
       cenaBrutto: finalYearlyPrice,
       cenaPerCapita,
-      cenaRynkowaOsoba: 0,
+      cenaRynkowaOsoba: szablonWymagaLabu ? labSzablon.sumaRynkowa : 0,
       marzaProcent: "100.0%",
       logistyka: log,
       abonament: true,
       harmonogram: harmonogramDict,
       kosztOperacyjny: kosztBazowyProgramu,
       przychodSztywnyLab: 0,
+      ...(detalSzablon ? { labCartDetal: detalSzablon } : {}),
     });
     toast.success(`Dodano Roczny Program: ${profile} do zestawienia!`);
   };
@@ -457,19 +445,39 @@ export default function YearlyProgramView() {
   const handleAddCustom = () => {
     const harmonogramDict: Harmonogram = {
       "Kwartał 1": {
-        akcja: zbudujNazweAkcji(customActions.q1, customLabPackages),
+        akcja: zbudujNazweAkcji(
+          customActions.q1,
+          akcjaWymagaLabWWpisie(customActions.q1)
+            ? labWybraneNazwy(labCustom.labCartDetal)
+            : null
+        ),
         webinar: customWebinars.q1,
       },
       "Kwartał 2": {
-        akcja: zbudujNazweAkcji(customActions.q2, customLabPackages),
+        akcja: zbudujNazweAkcji(
+          customActions.q2,
+          akcjaWymagaLabWWpisie(customActions.q2)
+            ? labWybraneNazwy(labCustom.labCartDetal)
+            : null
+        ),
         webinar: customWebinars.q2,
       },
       "Kwartał 3": {
-        akcja: zbudujNazweAkcji(customActions.q3, customLabPackages),
+        akcja: zbudujNazweAkcji(
+          customActions.q3,
+          akcjaWymagaLabWWpisie(customActions.q3)
+            ? labWybraneNazwy(labCustom.labCartDetal)
+            : null
+        ),
         webinar: customWebinars.q3,
       },
       "Kwartał 4": {
-        akcja: zbudujNazweAkcji(customActions.q4, customLabPackages),
+        akcja: zbudujNazweAkcji(
+          customActions.q4,
+          akcjaWymagaLabWWpisie(customActions.q4)
+            ? labWybraneNazwy(labCustom.labCartDetal)
+            : null
+        ),
         webinar: customWebinars.q4,
       },
       dietetyk: customDietitian,
@@ -479,18 +487,27 @@ export default function YearlyProgramView() {
     let log = `Priorytet: ${priority}\nPacjenci: ${totalPatients}\nLokalizacje:\n${opisLokProg}`;
     if (customDietitian)
       log += `\nDodatkowo: ${customDietitianDays} dni konsultacji dietetycznych.`;
+    if (
+      needsLabPackages &&
+      labCustom.szczegolyPakietow.trim()
+    ) {
+      log += `\n**Skład wybranego laboratorium:**\n${labCustom.szczegolyPakietow}\n`;
+    }
+
+    const detalCustom = needsLabPackages ? labCustom.labCartDetal : null;
 
     addToCart({
       usluga: "Indywidualny Program Zdrowotny",
       cenaBrutto: finalYearlyPrice,
       cenaPerCapita,
-      cenaRynkowaOsoba: 0,
+      cenaRynkowaOsoba: needsLabPackages ? labCustom.sumaRynkowa : 0,
       marzaProcent: "100.0%",
       logistyka: log,
       abonament: true,
       harmonogram: harmonogramDict,
       kosztOperacyjny: kosztBazowyProgramu,
       przychodSztywnyLab: 0,
+      ...(detalCustom ? { labCartDetal: detalCustom } : {}),
     });
     toast.success("Dodano Indywidualny Program Zdrowotny do zestawienia!");
   };
@@ -720,74 +737,20 @@ export default function YearlyProgramView() {
               </div>
 
               {profile === "Zakład Produkcyjny / Praca fizyczna" && (
-                <div className="mt-6">
-                  <p className="mb-2 text-sm font-medium text-slate-700">
-                    Q4 – Badania Lab: wybierz gotowy pakiet
-                  </p>
-                  {isLoading ? (
-                    <p className="rounded-lg bg-slate-100 px-4 py-3 text-sm text-slate-600">
-                      Ładowanie pakietów...
-                    </p>
-                  ) : pakietyDoSiatki.length === 0 ? (
-                    <p className="text-sm text-amber-800">
-                      Brak pozycji z rodzajem „pakiet” w bazie — ustaw kolumnę{" "}
-                      <code className="rounded bg-amber-100 px-1">rodzaj</code>{" "}
-                      dla pakietów laboratoryjnych.
-                    </p>
-                  ) : (
-                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                      {pakietyDoSiatki.map((pkg: any, idx: number) => {
-                        const norm = normalizePackageFields(pkg);
-                        const { nazwa, cena, koszt, skladniki, description } =
-                          norm;
-                        const displayNazwa = nazwa || `Pakiet ${idx + 1}`;
-                        const isSelected = q4LabPackage === displayNazwa;
-                        const sKey = getStableKey(pkg);
-                        return (
-                          <div
-                            key={pkg.id ?? sKey}
-                            className={`flex min-h-0 min-w-0 gap-2 rounded-xl border-2 p-3 transition-all duration-200 ${
-                              isSelected
-                                ? "border-green-500 bg-green-50 ring-2 ring-green-500"
-                                : "border-slate-200 bg-white"
-                            }`}
-                          >
-                            <Button
-                              type="button"
-                              variant={isSelected ? "default" : "outline"}
-                              onClick={() =>
-                                setQ4LabPackage((prev) =>
-                                  prev === displayNazwa ? "" : displayNazwa
-                                )
-                              }
-                              className="!flex !h-auto !whitespace-normal min-h-0 min-w-0 flex-1 shrink flex-col items-start justify-start gap-2 break-words px-3 py-3 text-left text-sm leading-snug"
-                            >
-                              <span className="w-full min-w-0 font-semibold leading-snug text-balance">
-                                {displayNazwa}
-                              </span>
-                              <span className="w-full text-xs text-slate-600">
-                                Koszt: {koszt} PLN / os.
-                              </span>
-                              <span className="w-full text-sm font-bold leading-snug">
-                                Nasza cena: {cena} PLN / os.
-                              </span>
-                            </Button>
-                            <div className="shrink-0 self-start pt-1">
-                              <LabItemInfo
-                                title={displayNazwa}
-                                skladniki={skladniki}
-                                description={description}
-                                includeInOffer={!!dolaczOpisDoOferty[sKey]}
-                                onIncludeChange={(v) =>
-                                  setIncludeOffer(sKey, v)
-                                }
-                              />
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
+                <div
+                  className={cn(
+                    "mt-6 space-y-2",
+                    activeTab !== "szablony" && "hidden"
                   )}
+                >
+                  <p className="mb-2 text-sm font-medium text-slate-700">
+                    Q4 – Badania Lab: konfiguracja (jak w module Lab)
+                  </p>
+                  <LabConfiguratorPanel
+                    packagesDb={packagesDb}
+                    isLoading={isLoading}
+                    onSnapshot={onLabSzablon}
+                  />
                 </div>
               )}
             </div>
@@ -881,81 +844,35 @@ export default function YearlyProgramView() {
                   </div>
                 ))}
               </div>
-              {needsLabPackages && (
-                <div className="mt-6">
-                  <p className="mb-2 text-sm font-medium text-slate-700">
-                    Wybrałeś akcję wymagającą laboratorium — wybierz gotowe
-                    pakiety (jak w module Lab):
-                  </p>
-                  {isLoading ? (
-                    <p className="rounded-lg bg-slate-100 px-4 py-3 text-sm text-slate-600">
-                      Ładowanie pakietów...
-                    </p>
-                  ) : pakietyDoSiatki.length === 0 ? (
-                    <p className="text-sm text-amber-800">
-                      Brak pozycji z rodzajem „pakiet” w bazie.
-                    </p>
-                  ) : (
-                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                      {pakietyDoSiatki.map((pkg: any, idx: number) => {
-                        const norm = normalizePackageFields(pkg);
-                        const { nazwa, cena, koszt, skladniki, description } =
-                          norm;
-                        const displayNazwa = nazwa || `Pakiet ${idx + 1}`;
-                        const isSelected =
-                          customLabPackages.includes(displayNazwa);
-                        const sKey = getStableKey(pkg);
-                        return (
-                          <div
-                            key={pkg.id ?? sKey}
-                            className={`flex min-h-0 min-w-0 gap-2 rounded-xl border-2 p-3 transition-all duration-200 ${
-                              isSelected
-                                ? "border-green-500 bg-green-50 ring-2 ring-green-500"
-                                : "border-slate-200 bg-white"
-                            }`}
-                          >
-                            <Button
-                              type="button"
-                              variant={isSelected ? "default" : "outline"}
-                              onClick={() =>
-                                toggleCustomLabPackage(displayNazwa)
-                              }
-                              className="!flex !h-auto !whitespace-normal min-h-0 min-w-0 flex-1 shrink flex-col items-start justify-start gap-2 break-words px-3 py-3 text-left text-sm leading-snug"
-                            >
-                              <span className="w-full min-w-0 font-semibold leading-snug text-balance">
-                                {displayNazwa}
-                              </span>
-                              <span className="w-full text-xs text-slate-600">
-                                Koszt: {koszt} PLN / os.
-                              </span>
-                              <span className="w-full text-sm font-bold leading-snug">
-                                Nasza cena: {cena} PLN / os.
-                              </span>
-                            </Button>
-                            <div className="shrink-0 self-start pt-1">
-                              <LabItemInfo
-                                title={displayNazwa}
-                                skladniki={skladniki}
-                                description={description}
-                                includeInOffer={!!dolaczOpisDoOferty[sKey]}
-                                onIncludeChange={(v) =>
-                                  setIncludeOffer(sKey, v)
-                                }
-                              />
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
+              <div
+                className={cn(
+                  "mt-6 space-y-2",
+                  activeTab !== "custom" && "hidden"
+                )}
+              >
+                <p
+                  className={cn(
+                    "mb-2 text-sm font-medium text-slate-700",
+                    !needsLabPackages && "hidden"
                   )}
+                >
+                  Wybrałeś akcję wymagającą laboratorium — skonfiguruj badania
+                  (jak w module Lab):
+                </p>
+                <div className={cn(!needsLabPackages && "hidden")}>
+                  <LabConfiguratorPanel
+                    packagesDb={packagesDb}
+                    isLoading={isLoading}
+                    onSnapshot={onLabCustom}
+                  />
                 </div>
-              )}
+              </div>
             </div>
         </TabsContent>
         </Tabs>
 
         {/* Podsumowanie */}
-        {totalPatients > 0 && (
+        {totalPatients > 0 && podsumowanieOk && (
           <>
             <hr className="my-6 border-slate-200" />
             <div className="rounded-xl border border-blue-200 bg-blue-50/50 p-6 shadow-sm transition-all duration-200">
