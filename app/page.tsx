@@ -15,7 +15,7 @@ import {
   FileText,
 } from "lucide-react";
 import { useStore } from "@/src/store/useStore";
-import { DANE_HANDLOWCOW } from "@/src/lib/constants";
+import { pobierzProfilUzytkownika } from "@/src/lib/uzytkownicy";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -79,9 +79,11 @@ const MENU_ITEMS: MenuItem[] = [
 function LoginScreen({
   onLogin,
   error,
+  isSubmitting,
 }: {
   onLogin: (email: string, password: string) => void;
   error: boolean;
+  isSubmitting: boolean;
 }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -129,8 +131,13 @@ function LoginScreen({
                 ⛔ Błędny email lub hasło. Spróbuj ponownie.
               </p>
             )}
-            <Button type="submit" size="lg" className="mt-2 w-full transition-all duration-200">
-              Wejdź do generatora
+            <Button
+              type="submit"
+              size="lg"
+              className="mt-2 w-full transition-all duration-200"
+              disabled={isSubmitting}
+            >
+              {isSubmitting ? "Logowanie…" : "Wejdź do generatora"}
             </Button>
           </form>
         </CardContent>
@@ -238,29 +245,41 @@ export default function Home() {
   const { user, cart, setUser, clearCart, logout } = useStore();
   const [currentView, setCurrentView] = useState<ViewId>("summary");
   const [loginError, setLoginError] = useState(false);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
 
-  const handleLogin = (email: string, password: string) => {
+  const handleLogin = async (email: string, password: string) => {
     if (password !== PASSWORD) {
       setLoginError(true);
       return;
     }
+    setIsLoggingIn(true);
     setLoginError(false);
-    const emailLower = email.trim().toLowerCase();
-    const handlowiec = DANE_HANDLOWCOW[emailLower] ?? {
-      imie: "Nieznany Handlowiec",
-      stanowisko: "Manager ds. Klientów",
-      telefon: "",
-    };
-    setUser({
-      email: emailLower,
-      imie: handlowiec.imie,
-      stanowisko: handlowiec.stanowisko,
-      telefon: handlowiec.telefon,
-    });
+    try {
+      const emailLower = email.trim().toLowerCase();
+      const profil = await pobierzProfilUzytkownika(emailLower);
+      if (!profil) {
+        setLoginError(true);
+        return;
+      }
+      setUser({
+        email: emailLower,
+        imie: profil.imie,
+        stanowisko: profil.stanowisko,
+        telefon: profil.telefon,
+      });
+    } finally {
+      setIsLoggingIn(false);
+    }
   };
 
   if (!user) {
-    return <LoginScreen onLogin={handleLogin} error={loginError} />;
+    return (
+      <LoginScreen
+        onLogin={handleLogin}
+        error={loginError}
+        isSubmitting={isLoggingIn}
+      />
+    );
   }
 
   return (

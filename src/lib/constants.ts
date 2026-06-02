@@ -12,6 +12,7 @@ export const DANE_HANDLOWCOW: Record<string, DaneHandlowca> = {
   "katarzyna.czarnowska@longlife.pl": { imie: "Katarzyna Czarnowska", stanowisko: "Członek Zarządu. Dyrektor Operacyjny", telefon: "+48 883 112 004" },
   "katarzyna.pawlowska@longlife.pl": { imie: "Katarzyna Pawłowska", stanowisko: "Customer Care", telefon: "+48 533 100 317" },
   "aleksandra.leszczynska@longlife.pl": { imie: "Aleksandra Leszczyńska", stanowisko: "Koordynator ds. Realizacji Akcji", telefon: "+48 535 743 026" },
+  "aleksandra.grabowska@longlife.pl": { imie: "Aleksandra Grabowska", stanowisko: "Business Development Manager", telefon: "--" },
   "piotr.leszczynski@longlife.pl": { imie: "Piotr Leszczyński", stanowisko: "Członek Zarządu. Dyrektor Medyczny", telefon: "+48 535 958 322" },
   "filip.clapka@longlife.pl": { imie: "Filip Cłapka", stanowisko: "--", telefon: "--" },
   "olga.skowronska@longlife.pl": { imie: "Olga Skowrońska", stanowisko: "--", telefon: "--" },
